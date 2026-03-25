@@ -1,6 +1,7 @@
 ✋ Hand Sign Detector
 
 A simple hand sign detection project using computer vision techniques with OpenCV.
+<img width="1271" height="950" alt="2026-03-25_11-29" src="https://github.com/user-attachments/assets/624e84a8-abe0-48b1-810d-91014d0cbf6f" />
 
 🚀 Features
 Real-time hand sign detection
@@ -18,9 +19,8 @@ source hand/bin/activate
 
 # Install dependencies
 pip install opencv-python
+pip install mediapipe
+
 
 ▶️ Usage
-
-Run your main script (replace with your actual file name):
-
 python3 hand_detector.py
