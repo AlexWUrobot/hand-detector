@@ -72,6 +72,24 @@ class GestureRecognizer:
         self._last_emit_time_s: float = 0.0
         self._cooldown_s = cooldown_s
 
+        # Rotation sensitivity tuning
+        self._rot_point_vx_thresh = 0.04
+        self._rot_point_dom_ratio = 0.7
+        self._rot_cooldown_s = 0.25
+
+    def _maybe_emit(self, action: str, now_s: float, cooldown_s: Optional[float] = None) -> Optional[str]:
+        cooldown = self._cooldown_s if cooldown_s is None else cooldown_s
+
+        if self._last_emitted == action and (now_s - self._last_emit_time_s) < cooldown:
+            return None
+
+        if (now_s - self._last_emit_time_s) < cooldown and self._last_emitted != action:
+            return None
+
+        self._last_emitted = action
+        self._last_emit_time_s = now_s
+        return action
+
     @staticmethod
     def _palm_center(hand_landmarks) -> Tuple[float, float, float]:
         # Palm-ish center: wrist + MCPs
@@ -127,6 +145,9 @@ class GestureRecognizer:
         )
 
         action = self._detect_action(hand_landmarks)
+        if action in ("move clockwise", "move counterclockwise"):
+            # More responsive for rotation; keep a short cooldown to avoid spam.
+            return self._maybe_emit(action, now_s, cooldown_s=self._rot_cooldown_s)
         if action is None:
             self._action_hist.clear()
             return None
@@ -139,15 +160,7 @@ class GestureRecognizer:
         if count < self._action_hist.maxlen:
             return None
 
-        if most_common == self._last_emitted and (now_s - self._last_emit_time_s) < self._cooldown_s:
-            return None
-
-        if (now_s - self._last_emit_time_s) < self._cooldown_s and most_common != self._last_emitted:
-            return None
-
-        self._last_emitted = most_common
-        self._last_emit_time_s = now_s
-        return most_common
+        return self._maybe_emit(most_common, now_s)
 
     def reset(self) -> None:
         self._hist.clear()
@@ -175,8 +188,9 @@ class GestureRecognizer:
         vx = tip_x - mcp_x
         vy = tip_y - mcp_y
 
-        # Require the pointing vector to be mostly horizontal
-        if abs(vx) > 0.06 and abs(vx) > abs(vy):
+        # Require the pointing vector to be mostly horizontal (tuned for sensitivity)
+        # NOTE: thresholds are conservative defaults; instance values may override.
+        if abs(vx) > 0.06 and abs(vx) > 0.7 * abs(vy):
             return -1 if vx < 0 else 1
         return 0
 
@@ -192,32 +206,32 @@ class GestureRecognizer:
         thumb_up = bool(mask & 1)
         pinky_up = bool(mask & 16)
 
-        if fingers == 1 and index_up and not (thumb_up or middle_up or ring_up or pinky_up):
+        # Thumb detection is relatively noisy; for rotation gestures we base the
+        # "1 or 2 fingers" requirement on NON-thumb fingers only.
+        non_thumb_count = int(index_up) + int(middle_up) + int(ring_up) + int(pinky_up)
+
+        if non_thumb_count == 1 and index_up and not (middle_up or ring_up or pinky_up):
             d = self._point_dir(hand_landmarks, [INDEX_TIP], [INDEX_MCP])
+            vx = hand_landmarks[INDEX_TIP].x - hand_landmarks[INDEX_MCP].x
+            vy = hand_landmarks[INDEX_TIP].y - hand_landmarks[INDEX_MCP].y
+            if abs(vx) > self._rot_point_vx_thresh and abs(vx) > self._rot_point_dom_ratio * abs(vy):
+                d = -1 if vx < 0 else 1
             if d != 0:
                 return "move clockwise" if d < 0 else "move counterclockwise"
 
-        if fingers == 2 and index_up and middle_up and not (thumb_up or ring_up or pinky_up):
-            d = self._point_dir(hand_landmarks, [INDEX_TIP, MIDDLE_TIP], [INDEX_MCP, MIDDLE_MCP])
+        if non_thumb_count == 2 and index_up and middle_up and not (ring_up or pinky_up):
+            # Use averaged pointing vector for 2-finger direction
+            tip_x = (hand_landmarks[INDEX_TIP].x + hand_landmarks[MIDDLE_TIP].x) / 2
+            tip_y = (hand_landmarks[INDEX_TIP].y + hand_landmarks[MIDDLE_TIP].y) / 2
+            mcp_x = (hand_landmarks[INDEX_MCP].x + hand_landmarks[MIDDLE_MCP].x) / 2
+            mcp_y = (hand_landmarks[INDEX_MCP].y + hand_landmarks[MIDDLE_MCP].y) / 2
+            vx = tip_x - mcp_x
+            vy = tip_y - mcp_y
+            d = 0
+            if abs(vx) > self._rot_point_vx_thresh and abs(vx) > self._rot_point_dom_ratio * abs(vy):
+                d = -1 if vx < 0 else 1
             if d != 0:
                 return "move clockwise" if d < 0 else "move counterclockwise"
-
-        # 3 fingers (index+middle+ring) pointing + swipe left/right
-        # - Point left + swipe left => clockwise
-        # - Point right + swipe right => counterclockwise
-        if fingers == 3 and index_up and middle_up and ring_up and not (thumb_up or pinky_up):
-            d = self._point_dir(
-                hand_landmarks,
-                [INDEX_TIP, MIDDLE_TIP, RING_TIP],
-                [INDEX_MCP, MIDDLE_MCP, RING_MCP],
-            )
-            if d != 0 and len(self._hist) >= self._hist.maxlen:
-                dx, dz = self._motion_delta()
-                if abs(dx) > 0.12 and abs(dx) > abs(dz):
-                    if d < 0 and dx < 0:
-                        return "move clockwise"
-                    if d > 0 and dx > 0:
-                        return "move counterclockwise"
 
         # Motion-based gestures need some history
         if len(self._hist) < self._hist.maxlen:
