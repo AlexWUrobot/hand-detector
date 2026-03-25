@@ -27,4 +27,5 @@ pip install mediapipe
 
 
 ▶️ Usage
-python3 hand_detector.py
+python3 hand_detector.py  # for basic fingers detection for debug
+python3 sign_detector.py  # for sign detection usage
