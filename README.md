@@ -27,7 +27,9 @@ python3 -m venv hand
 source hand/bin/activate
 
 # Install dependencies
+
 pip install opencv-python
+
 pip install mediapipe
 
 
