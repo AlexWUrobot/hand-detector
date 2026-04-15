@@ -8,8 +8,8 @@ from mediapipe.tasks.python import vision
 from mediapipe.tasks.python.core import base_options
 
 
-MODEL_URL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/latest/pose_landmarker_lite.task"
-MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "pose_landmarker_lite.task")
+MODEL_URL = "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_heavy/float16/latest/pose_landmarker_heavy.task"
+MODEL_PATH = os.path.join(os.path.dirname(__file__), "models", "pose_landmarker_heavy.task")
 
 
 def ensure_model(model_path: str) -> None:
